@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Three.js Photo App</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        canvas { display: block; }
+        
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center;
+            align-items: center; z-index: 20; background: rgba(0,0,0,0.8);
+        }
+
+        #controls {
+            position: absolute; bottom: 40px; width: 100%;
+            display: none; justify-content: center; align-items: center; z-index: 10;
+        }
+
+        .btn {
+            padding: 15px 30px; font-size: 18px; border: none; 
+            border-radius: 50px; cursor: pointer; font-weight: bold;
+        }
+
+        #start-btn { background: #00ff88; color: #000; }
+
+        #capture-btn {
+            width: 80px; height: 80px; border-radius: 50%;
+            border: 5px solid white; background: rgba(255,255,255,0.2);
+        }
+        #capture-btn:active { background: #fff; }
+
+        #status {
+            position: absolute; top: 20px; width: 100%; text-align: center;
+            color: #ff4444; z-index: 30; font-size: 14px; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="status"></div>
+
+    <div id="overlay">
+        <h2 style="color: white;">Three.js Camera</h2>
+        <button id="start-btn" class="btn">ENABLE CAMERA</button>
+        <p style="color: #888; margin-top: 10px;">Requires HTTPS</p>
+    </div>
+
+    <div id="controls">
+        <button id="capture-btn"></button>
+    </div>
+
+    <video id="video" autoplay playsinline style="display:none"></video>
+
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+
+        let scene, camera, renderer, videoTexture;
+        const statusEl = document.getElementById('status');
+        const video = document.getElementById('video');
+
+        function logError(msg) {
+            statusEl.innerText = msg;
+            console.error(msg);
+        }
+
+        async function setupCamera() {
+            const constraints = {
+                video: { 
+                    facingMode: "environment", // Uses back camera
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                // Wait for video to actually start playing
+                await new Promise((resolve) => video.onloadedmetadata = resolve);
+                video.play();
+                return true;
+            } catch (err) {
+                if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                    logError("ERROR: Camera requires HTTPS (Secure Site)");
+                } else {
+                    logError("CAMERA ERROR: " + err.name);
+                }
+                return false;
+            }
+        }
+
+        function initThree() {
+            scene = new THREE.Scene();
+            // Orthographic camera fills the screen perfectly for a 2D-style view
+            camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true, 
+                preserveDrawingBuffer: true // CRITICAL for taking photos
+            });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            videoTexture = new THREE.VideoTexture(video);
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            const material = new THREE.MeshBasicMaterial({ map: videoTexture });
+            const mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // --- Event Listeners ---
+
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            const success = await setupCamera();
+            if (success) {
+                initThree();
+                document.getElementById('overlay').style.display = 'none';
+                document.getElementById('controls').style.display = 'flex';
+            }
+        });
+
+        document.getElementById('capture-btn').addEventListener('click', () => {
+            // Flash effect
+            document.body.style.backgroundColor = 'white';
+            setTimeout(() => document.body.style.backgroundColor = 'black', 50);
+
+            // Convert canvas to image
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `shot_${Date.now()}.png`;
+            link.href = dataURL;
+            link.click();
+        });
+
+        window.addEventListener('resize', () => {
+            if (renderer) {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+    </script>
+</body>
+</html>
